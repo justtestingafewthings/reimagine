@@ -11,6 +11,7 @@ Usage: reimagine <infile> [<outfile>] <options>
 	-d, --dump		print tag names and hexdump their content
 				(Note: this option must be used on the decrypted file)
 	-l, --list		list tags present in file
+	-b, --kbags		print kbags
 	-r, --raw		dump the DATA tag to <outfile>
 	-x, --decompress	decompress lzss compressed kernelcache
 	-c, --compress		lzss compress an uncompressed kernelcache

@@ -160,8 +160,6 @@ int image3_map_file(const char* filename, void** buffer, size_t *file_size)
 
     *buffer = (uint8_t *) _xmalloc (buf.st_size);
 
-    printf("buffer size:0x%x\n", (uint32_t) buf.st_size);
-
     if (fread ((void *) *buffer, buf.st_size, 1, fp) != 1) {
         fclose (fp);
         return -EIO;

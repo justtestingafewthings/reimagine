@@ -65,6 +65,9 @@ int hasKey = 0;
 int hasIV = 0;
 int shouldDump = 0;
 int shouldList = 0;
+int shouldPrintKBags = 0;
+int foundKBAG = 0;
+int invalidKBAG = 0;
 int dumpData = 0;
 int shouldDecompress = 0;
 int shouldCompress = 0;
@@ -181,6 +184,30 @@ void my_callback(Image3Header *tag, Image3RootHeader *root) {
   /* tag will be overwritten with this (if non NULL) in out file  */
   void *out_buff = NULL;
   int out_size = 0;
+
+  if (shouldPrintKBags && tag->magic == kImage3TagKeyBag) {
+    const uint8_t *bag = (const uint8_t *) (tag + 1);
+    uint32_t key_bits;
+    size_t bag_size;
+    int valid = 0;
+
+    foundKBAG = 1;
+    if (tag->dataSize >= 8) {
+      memcpy(&key_bits, bag + 4, sizeof(key_bits));
+      bag_size = 8 + 16 + key_bits / 8;
+      if ((key_bits == 128 || key_bits == 192 || key_bits == 256) &&
+          tag->dataSize >= bag_size) {
+        valid = 1;
+        for (size_t i = 8; i < bag_size; i++)
+          printf("%02x", bag[i]);
+        printf("\n");
+      }
+    }
+    if (!valid) {
+      invalidKBAG = 1;
+      fprintf(stderr, "[e] invalid KBAG tag\n");
+    }
+  }
 
   /* decrypt the image */
   if (tag->magic==kImage3TagData) {
@@ -345,6 +372,7 @@ int main(int argc, char *argv[]) {
     printf("\t-d, --dump\t\tprint tag names and hexdump their content\n");
     printf("\t\t\t\t(Note: this option must be used on the decrypted file)\n");
     printf("\t-l, --list\t\tlist tags present in file\n");
+    printf("\t-b, --kbags\t\tprint kbags\n");
     printf("\t-r, --raw\t\tdump the DATA tag to <outfile>\n");
     printf("\t-x, --decompress\tdecompress lzss compressed kernelcache\n");
     printf("\t-c, --compress\t\tlzss compress an uncompressed kernelcache\n");
@@ -363,6 +391,10 @@ int main(int argc, char *argv[]) {
   while (argNo < argc) {
     if (strcmp(argv[argNo], "-l")==0 || strcmp(argv[argNo], "--list")==0) {
       shouldList = 1;
+    }
+
+    if (strcmp(argv[argNo], "-b")==0 || strcmp(argv[argNo], "--kbags")==0) {
+      shouldPrintKBags = 1;
     }
 
     if (strcmp(argv[argNo], "-d")==0 || strcmp(argv[argNo], "--dump")==0) {
@@ -427,7 +459,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (outfile==NULL) {
-    char *trailer = _xmalloc(21);
+    char trailer[21] = "";
 
     if (hasKey && hasIV)
       strcat(trailer, ".dec");
@@ -443,11 +475,9 @@ int main(int argc, char *argv[]) {
 
     if (trailer[0]!='\0') {
       outfile = _xmalloc(strlen(argv[1]) + strlen(trailer) + 1);
-      strcat(outfile, argv[1]);
+      strcpy(outfile, argv[1]);
       strcat(outfile, trailer);
     }
-
-    free(trailer);
   }
 
   DEBUG_PRINT("outfile is %s\n", outfile);
@@ -480,6 +510,12 @@ int main(int argc, char *argv[]) {
 
   if (!image3_iterate_tags(image_buffer, image_size, &my_callback))
     return 1;
+
+  if (shouldPrintKBags && (!foundKBAG || invalidKBAG)) {
+    if (!foundKBAG)
+      fprintf(stderr, "[e] no KBAG tags in image\n");
+    return 1;
+  }
 
   size_t total_size = 0;
   foreach_chunk(i)
