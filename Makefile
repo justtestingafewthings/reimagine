@@ -1,7 +1,11 @@
 CC=clang
-CFLAGS= -O2 -c -pipe -Wall -Wno-multichar -Wno-unused-function -std=c99
 
-LDFLAGS= -lssl -lcrypto
+BREW := $(shell command -v brew 2>/dev/null || echo /opt/homebrew/bin/brew)
+export PKG_CONFIG_PATH := $(shell $(BREW) --prefix openssl@3 2>/dev/null)/lib/pkgconfig:$(PKG_CONFIG_PATH)
+
+CFLAGS= -O2 -c -pipe -Wall -Wno-multichar -Wno-unused-function -std=c99 $(shell pkg-config --cflags openssl)
+
+LDFLAGS= $(shell pkg-config --libs openssl)
 
 all: opensn0w reimagine
 
