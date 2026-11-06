@@ -21,17 +21,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <openssl/aes.h>
 #include <sys/stat.h>
 
-#include "opensn0w-X/include/image3.h"
-#include "opensn0w-X/include/util.h"
-#include "opensn0w-X/include/structs.h"
-#include "opensn0w-X/include/ibootsup.h"
-#include "opensn0w-X/include/kcache.h"
+#include "aes.h"
+#include "image3.h"
+#include "util.h"
+#include "kcache.h"
 
 #define __target_arm__
-#include "opensn0w-X/include/macho.h"
+#include "macho.h"
 #undef __target_arm__
 
 #include "helper.h"
@@ -67,9 +65,9 @@ int hasKey = 0;
 int hasIV = 0;
 int shouldDump = 0;
 int shouldList = 0;
-int shouldPatch = 0;
 int dumpData = 0;
 int shouldDecompress = 0;
+int shouldCompress = 0;
 
 size_t keysize;
 
@@ -205,9 +203,6 @@ void my_callback(Image3Header *tag, Image3RootHeader *root) {
         bKey[i] = key[i] & 0xff;
       }
 
-      AES_KEY dec_key;
-      AES_set_decrypt_key(bKey, keyBits, &dec_key);
-
       uint8_t ivec[16];
       memcpy(ivec, my_iv, 16);
 
@@ -215,12 +210,7 @@ void my_callback(Image3Header *tag, Image3RootHeader *root) {
       void *buf = _xmalloc(size);
       memcpy(buf, (tag + 1), size);
 
-      AES_cbc_encrypt((unsigned char *) (buf),
-                      (unsigned char *) (buf),
-                      size,
-                      &dec_key,
-                      ivec,
-                      AES_DECRYPT);
+      aes_cbc_decrypt(bKey, keyBits, ivec, (uint8_t *) buf, size);
 
       if (!verify_data(root->shshExtension.imageType, buf))
         printf("[W] You might have supplied wrong key/IV.\n");
@@ -259,21 +249,6 @@ void my_callback(Image3Header *tag, Image3RootHeader *root) {
       out_size = buf.st_size;
     }
 
-    if (shouldPatch && (root->shshExtension.imageType==kImage3TypeiBoot ||
-        root->shshExtension.imageType==kImage3TypeiBEC ||
-        root->shshExtension.imageType==kImage3TypeiBSS ||
-        root->shshExtension.imageType==kImage3TypeiLLB)) {
-      struct mapped_image img;
-      img.image = (uint8_t *) out_buff;
-      img.size = out_size;
-
-      if (ibootsup_set_image(img)!=0)
-        printf("[-] Couldn't set image for patching. Is this correct file ?\n");
-      if (ibootsup_dynapatch()!=0)
-        printf("[-] Couldn't patch file.\n");
-
-    }
-
     if (shouldDecompress && root->shshExtension.imageType==kImage3TypeKernel) {
       int decompressed_size = 0;
       void *decompressed;
@@ -295,6 +270,21 @@ void my_callback(Image3Header *tag, Image3RootHeader *root) {
 
       out_buff = decompressed;
       out_size = decompressed_size;
+    }
+
+    if (shouldCompress && root->shshExtension.imageType==kImage3TypeKernel) {
+      void *src = out_buff ? out_buff : (void *) (tag + 1);
+      int src_size = out_buff ? out_size : (int) tag->dataSize;
+      void *compressed = NULL;
+      int compressed_size = 0;
+
+      if (kcache_compress_kernel(src, src_size, &compressed, &compressed_size)) {
+        printf("[-] Cannot compress kernel.\n");
+        goto cont;
+      }
+
+      out_buff = compressed;
+      out_size = compressed_size;
     }
   }
 
@@ -356,8 +346,8 @@ int main(int argc, char *argv[]) {
     printf("\t\t\t\t(Note: this option must be used on the decrypted file)\n");
     printf("\t-l, --list\t\tlist tags present in file\n");
     printf("\t-r, --raw\t\tdump the DATA tag to <outfile>\n");
-    printf("\t-p, --patch\t\tpatch the file using ibootsup\n");
     printf("\t-x, --decompress\tdecompress lzss compressed kernelcache\n");
+    printf("\t-c, --compress\t\tlzss compress an uncompressed kernelcache\n");
     return -1;
   }
 
@@ -383,12 +373,12 @@ int main(int argc, char *argv[]) {
       dumpData = 1;
     }
 
-    if (strcmp(argv[argNo], "-p")==0 || strcmp(argv[argNo], "--patch")==0) {
-      shouldPatch = 1;
-    }
-
     if (strcmp(argv[argNo], "-x")==0 || strcmp(argv[argNo], "--decompress")==0) {
       shouldDecompress = 1;
+    }
+
+    if (strcmp(argv[argNo], "-c")==0 || strcmp(argv[argNo], "--compress")==0) {
+      shouldCompress = 1;
     }
 
     if (strcmp(argv[argNo], "-k")==0 && (argNo + 1) < argc) {
@@ -422,9 +412,10 @@ int main(int argc, char *argv[]) {
       hexToInts(keyPart, &key, &keysize);
       if (keysize%8!=0)
         printf("[-] Check your ivkey, it has to be 32, 40 or 48 bytes.\n");
-      else
+      else {
         hasIV = 1;
         hasKey = 1;
+      }
     }
 
 
@@ -441,14 +432,14 @@ int main(int argc, char *argv[]) {
     if (hasKey && hasIV)
       strcat(trailer, ".dec");
 
-    if (shouldPatch)
-      strcat(trailer, ".pwn");
-
     if (dumpData)
       strcat(trailer, ".raw");
 
     if (shouldDecompress)
       strcat(trailer, ".macho");
+
+    if (shouldCompress)
+      strcat(trailer, ".lzss");
 
     if (trailer[0]!='\0') {
       outfile = _xmalloc(strlen(argv[1]) + strlen(trailer) + 1);
@@ -462,8 +453,9 @@ int main(int argc, char *argv[]) {
   DEBUG_PRINT("outfile is %s\n", outfile);
 
   void *image_buffer = NULL;
+  size_t image_size = 0;
 
-  if (image3_map_file(argv[1], &image_buffer)!=0) {
+  if (image3_map_file(argv[1], &image_buffer, &image_size)!=0) {
     printf("[-] Can't open file.\n");
     return -1;
   }
@@ -486,7 +478,8 @@ int main(int argc, char *argv[]) {
     printf("\nRoot shsh offset: \t0x%x\n", orig->shshExtension.shshOffset);
   }
 
-  image3_iterate_tags(image_buffer, &my_callback);
+  if (!image3_iterate_tags(image_buffer, image_size, &my_callback))
+    return 1;
 
   size_t total_size = 0;
   foreach_chunk(i)
@@ -557,7 +550,7 @@ int main(int argc, char *argv[]) {
       return -1;
     };
 
-    fwrite(out_buffer, total_size + sizeof(Image3RootHeader), 1, fd);
+    fwrite(out_buffer, total_size + (dumpData ? 0 : sizeof(Image3RootHeader)), 1, fd);
 
     fclose(fd);
   }

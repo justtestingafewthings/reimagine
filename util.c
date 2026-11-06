@@ -19,13 +19,24 @@
  * $Id$
  */
 
-#ifndef __IBOOTSUP_H
-#define __IBOOTSUP_H
+#include <sys/cdefs.h>
+#include <sys/types.h>
+#include <sys/errno.h>
+#include <string.h>
+#include <strings.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <err.h>
 
-int		ibootsup_dynapatch (void);
-int		ibootsup_map_file (const char *filename);
-int     ibootsup_set_image (struct mapped_image img);
-int		ibootsup_write_file (const char* filename);
-int		ibootsup_map_buffer (uint8_t* buf, int size);
+#include "util.h"
 
-#endif /* __IBOOTSUP_H */
+void *
+_xmalloc (size_t size)
+{
+	void *p = malloc (size);
+	if (!p)
+		err (-1, "cannot allocate chunk");
+	bzero (p, size);
+	return p;
+}

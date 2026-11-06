@@ -31,6 +31,7 @@
 #define _IMAGE3_H_
 
 #include <stdint.h>
+#include <stddef.h>
 
 #define kImage3Magic				'Img3'
 
@@ -92,6 +93,6 @@ extern int image3_fast_get_type(void *buffer, uint32_t * type);
 extern Image3Header *image3_find_tag(void *image, uint32_t find_tag);
 extern int image3_get_tag_data(void *image, uint32_t tag, void **out_data,
                                uint32_t * out_size);
-extern int image3_map_file(const char* filename, void** buffer);
-extern int image3_iterate_tags(void *image, tag_callback_t callback);
+extern int image3_map_file(const char* filename, void** buffer, size_t *file_size);
+extern int image3_iterate_tags(void *image, size_t image_size, tag_callback_t callback);
 #endif

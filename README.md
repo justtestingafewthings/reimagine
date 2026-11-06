@@ -1,7 +1,7 @@
 # reimagine
-This tool can be used for decrypting IMG files, listing, dumping their tags and patching their contents (using ibootsup from opensn0w-X).
+This tool can be used for decrypting IMG3 files, listing and dumping their tags, stripping the IMG3 container, and compressing/decompressing lzss kernelcaches.
 
-**Licensed under GNU GPL.** 
+**Licensed under GNU GPL.**
 
 ```
 Usage: reimagine <infile> [<outfile>] <options>
@@ -12,17 +12,15 @@ Usage: reimagine <infile> [<outfile>] <options>
 				(Note: this option must be used on the decrypted file)
 	-l, --list		list tags present in file
 	-r, --raw		dump the DATA tag to <outfile>
-	-p, --patch		patch the file using ibootsup
 	-x, --decompress	decompress lzss compressed kernelcache
+	-c, --compress		lzss compress an uncompressed kernelcache
 ```
 
 ## Example usage
-* Pwned iBEC for kloader
-`reimagine iBEC.n90ap.RELEASE.dfu -k ... -iv ... -p -r`
-* Pwned iBoot for iBEC
-`reimagine iBoot.n90ap.RELEASE.img3 -k ... -iv ... -p`
-* Decrypt kernel and extract into MachO file
+* Decrypt a kernelcache and extract it into a raw MachO file
 `reimagine kernelcache.release.n90 kernel.macho -iv ... -k ... -x -r`
+* Re-compress a raw kernelcache into a lzss `complzss` container
+`reimagine kernel.macho kernelcache.lzss -c -r`
 
 ## Building
 `make`

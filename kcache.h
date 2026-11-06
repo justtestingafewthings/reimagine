@@ -1,6 +1,5 @@
 /*-
  * Copyright 2013, winocm <winocm@icloud.com>
- * Copyright 2013, iH8sn0w.
  * All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -20,35 +19,10 @@
  * $Id$
  */
 
-#include <sys/cdefs.h>
-#include <sys/types.h>
-#include <sys/errno.h>
-#include <sys/stat.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdio.h>
+#ifndef __KCACHE_H
+#define __KCACHE_H
 
-#include <unistd.h>
-#include <fcntl.h>
-#include <err.h>
+int     kcache_decompress_kernel (void *compressedKernel, void *decompressedKernel, int *decompressed_size);
+int     kcache_compress_kernel (void *uncompressedKernel, int uncompressed_size, void **compressedKernel, int *compressed_size);
 
-#include <assert.h>
-#include "ibootsup.h"
-#include "structs.h"
-#include "patch.h"
-#include "util.h"
-
-int
-main (int argc, char *argv[])
-{
-	if(argc != 3) {
-		printf("usage: %s [in] [out] (input must be unencrypted image3)\n", argv[0]);
-		return -1;
-	}
-
-	assert (ibootsup_map_file (argv[1]) == 0);
-	assert (ibootsup_dynapatch () == 0);
-	assert (ibootsup_write_file (argv[2]) == 0);
-	return 0;
-}
+#endif /* __KCACHE_H */

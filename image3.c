@@ -102,30 +102,50 @@ int image3_get_tag_data(void *image, uint32_t tag, void **out_data,
     return false;
 }
 
-int image3_iterate_tags(void *image, tag_callback_t callback)
+int image3_iterate_tags(void *image, size_t image_size, tag_callback_t callback)
 {
-    Image3Header *root = (Image3Header *) image;
-    if (root->magic != kImage3Magic) {
-        printf("image3_iterate_tags: this is not an Img3 file 0x%08x\n",
-               (unsigned int)root->magic);
+    Image3RootHeader *root = (Image3RootHeader *) image;
+    size_t cursor = sizeof(*root);
+    size_t data_end;
+
+    if (image_size < sizeof(*root)) {
+        fprintf(stderr, "image3_iterate_tags: truncated root header\n");
         return false;
     }
-
-    Image3Header *tag = (Image3Header *) ((Image3RootHeader *) image + 1);
-
-    while (image3_off(root, tag) < root->size) {
-
-        callback(tag, (Image3RootHeader *) root);
-
-        tag = (Image3Header *) add_ptr2(tag, tag->size);        
+    if (root->header.magic != kImage3Magic) {
+        printf("image3_iterate_tags: this is not an Img3 file 0x%08x\n",
+               (unsigned int)root->header.magic);
+        return false;
     }
+    if (root->header.size > image_size || root->header.size < sizeof(*root) ||
+        root->header.dataSize > root->header.size - sizeof(*root)) {
+        fprintf(stderr, "image3_iterate_tags: invalid image size\n");
+        return false;
+    }
+    data_end = sizeof(*root) + root->header.dataSize;
 
-    /*printf("size: 0x%x\nend of last tag is 0x%x\n", root->size, (uint32_t) tag + tag->size - (uint32_t) image);*/
+    while (cursor < data_end) {
+        Image3Header *tag;
+        if (data_end - cursor < sizeof(Image3Header)) {
+            fprintf(stderr, "image3_iterate_tags: truncated tag header\n");
+            return false;
+        }
+        tag = (Image3Header *) ((uint8_t *) image + cursor);
+        if (tag->size < sizeof(*tag) ||
+            tag->size > root->header.size - cursor ||
+            tag->dataSize > tag->size - sizeof(*tag) ||
+            tag->dataSize > data_end - cursor - sizeof(*tag)) {
+            fprintf(stderr, "image3_iterate_tags: invalid tag size\n");
+            return false;
+        }
+        callback(tag, root);
+        cursor += tag->size;
+    }
 
     return true;    
 }
 
-int image3_map_file(const char* filename, void** buffer)
+int image3_map_file(const char* filename, void** buffer, size_t *file_size)
 {
     struct stat buf;
 
@@ -133,15 +153,22 @@ int image3_map_file(const char* filename, void** buffer)
 
     if (!fp)
         return -ENOENT;
-    if (stat (filename, &buf) > 0)
+    if (stat (filename, &buf) != 0) {
+        fclose (fp);
         return -ENOENT;
+    }
 
     *buffer = (uint8_t *) _xmalloc (buf.st_size);
 
     printf("buffer size:0x%x\n", (uint32_t) buf.st_size);
 
-    fread ((void *) *buffer, buf.st_size, 1, fp);
+    if (fread ((void *) *buffer, buf.st_size, 1, fp) != 1) {
+        fclose (fp);
+        return -EIO;
+    }
     fclose (fp);
+
+    *file_size = buf.st_size;
 
     return 0;
 }
