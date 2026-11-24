@@ -233,7 +233,11 @@ void my_callback(Image3Header *tag, Image3RootHeader *root) {
       uint8_t ivec[16];
       memcpy(ivec, my_iv, 16);
 
-      int size = tag->dataSize + (16 - (tag->dataSize%16));
+      int size = round_up(tag->dataSize, 16);
+      if (size < 0 || (size_t) size > tag->size - sizeof(*tag)) {
+        fprintf(stderr, "[e] encrypted DATA exceeds its tag\n");
+        exit(1);
+      }
       void *buf = _xmalloc(size);
       memcpy(buf, (tag + 1), size);
 
@@ -243,7 +247,7 @@ void my_callback(Image3Header *tag, Image3RootHeader *root) {
         printf("[W] You might have supplied wrong key/IV.\n");
 
       out_buff = buf;
-      out_size = size;
+      out_size = tag->dataSize;
     }
 
     if (stitchFile!=NULL) {
@@ -280,14 +284,15 @@ void my_callback(Image3Header *tag, Image3RootHeader *root) {
       int decompressed_size = 0;
       void *decompressed;
 
-      if (kcache_decompress_kernel(out_buff, NULL, &decompressed_size)) {
+      void *compressed = out_buff ? out_buff : (void *) (tag + 1);
+      if (kcache_decompress_kernel(compressed, NULL, &decompressed_size)) {
         printf("[-] Cannot decompress kernel.\n");
         goto cont;
       }
 
       printf("[i] decompressed kernelcache size %d\n", decompressed_size);
       decompressed = _xmalloc(decompressed_size);
-      if (kcache_decompress_kernel(out_buff, decompressed, &decompressed_size)) {
+      if (kcache_decompress_kernel(compressed, decompressed, &decompressed_size)) {
         free(decompressed);
         printf("[-] Cannot decompress kernel.\n");
         goto cont;
