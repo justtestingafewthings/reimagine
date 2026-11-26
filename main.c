@@ -233,15 +233,37 @@ void my_callback(Image3Header *tag, Image3RootHeader *root) {
       uint8_t ivec[16];
       memcpy(ivec, my_iv, 16);
 
-      int size = round_up(tag->dataSize, 16);
-      if (size < 0 || (size_t) size > tag->size - sizeof(*tag)) {
+      size_t available = tag->size - sizeof(*tag);
+      size_t data_size = tag->dataSize;
+      if (data_size > available || data_size > SIZE_MAX - 15) {
         fprintf(stderr, "[e] encrypted DATA exceeds its tag\n");
         exit(1);
       }
-      void *buf = _xmalloc(size);
-      memcpy(buf, (tag + 1), size);
+      size_t padded_size = (data_size + 15) & ~(size_t) 15;
+      size_t decrypt_size = padded_size;
+      /* Early IMG3s encrypt only complete blocks. Their remaining DATA bytes
+         and tag padding are left as plaintext, unlike later IMG3s. */
+      if (data_size % 16 != 0) {
+        if (padded_size > available) {
+          decrypt_size = data_size & ~(size_t) 15;
+        } else {
+          const uint8_t *padding = (const uint8_t *) (tag + 1) + data_size;
+          size_t at = 0;
+          while (at < padded_size - data_size && padding[at] == 0)
+            at++;
+          if (at == padded_size - data_size)
+            decrypt_size = data_size & ~(size_t) 15;
+        }
+      }
+      if (decrypt_size == 0 || decrypt_size > available) {
+        fprintf(stderr, "[e] encrypted DATA has no complete AES block\n");
+        exit(1);
+      }
+      size_t copy_size = decrypt_size > data_size ? decrypt_size : data_size;
+      void *buf = _xmalloc(copy_size);
+      memcpy(buf, (tag + 1), copy_size);
 
-      aes_cbc_decrypt(bKey, keyBits, ivec, (uint8_t *) buf, size);
+      aes_cbc_decrypt(bKey, keyBits, ivec, (uint8_t *) buf, decrypt_size);
 
       if (!verify_data(root->shshExtension.imageType, buf))
         printf("[W] You might have supplied wrong key/IV.\n");
