@@ -19,9 +19,8 @@
  * $Id$
  */
 
-#include <sys/cdefs.h>
 #include <sys/types.h>
-#include <sys/errno.h>
+#include <errno.h>
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>

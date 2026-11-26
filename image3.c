@@ -27,9 +27,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
 #include <sys/types.h>
-#include <sys/errno.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <string.h>
 #include <stdlib.h>
